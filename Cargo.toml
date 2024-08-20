@@ -1,0 +1,37 @@
+[package]
+name = "whaledrive"
+version = "0.0.1"
+edition = "2021"
+description = "A simple cli utility to download docker images and create ext4 .img files from them."
+license = "MIT"
+repository = "https://github.com/Nanite-Factory-Games/whaledrive"
+keywords = ["docker", "ext4", "cargo", "cargo-subcommand", "drive"]
+readme = "README.md"
+
+[[bin]]
+name = "cargo-whaledrive"
+path = "src/main.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+reqwest = { version = "0.12.5", features = ["json", "blocking", "rustls-tls", "stream", "gzip"], default-features = false }
+serde = { version = "1.0.204", features = ["derive"] }
+serde_json = "1.0.122"
+rustls = "0.23.12"
+anyhow = "1.0.86"
+tokio = { version = "1", features = ["full"] }
+clap = { version = "4.5.13", features = ["derive"]}
+camino = "1.1.7"
+flate2 = "1.0.31"
+tar = "0.4.41"
+tempfile = "3.11.0"
+du = "0.1.1"
+fs_extra = "1.3.0"
+lazy_static = "1.5.0"
+hyperlocal = "0.9.1"
+hyper-util = { version="0.1.7", features=["full"] }
+http-body-util = "0.1.2"
+hyper = "1.4.1"
+docker-api = "0.14.0"
+futures = "0.3.30"
