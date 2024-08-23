@@ -2,11 +2,11 @@ use std::fs;
 use anyhow::{Context, Result};
 
 use crate::{
-    application_state::{ApplicationState, Image, StateHandle}, models::{
+    application_state::{ApplicationState, Image, StateHandle}, docker_client::DockerClient, models::{
         input_models::*,
         output_models::{ImageInfoResult, ListImagesResult, MakeImageResult, PruneResult, RemoveImageResult},
         registry_models::Platform,
-    }, utils::{create_drive_image, download_layers, get_images_path, get_layers_path, get_manifest_for_platform, DockerClient}
+    }, paths::{get_images_path, get_layers_compressed_path}, utils::create_drive_image
 };
 
 /// Get the info about an image that will be downloaded
@@ -18,15 +18,10 @@ pub async fn image_info(args: ImageInfoArgs) -> Result<String> {
         os: args.os
     };
 
-    let client = DockerClient::new();
-    let auth = client.get_auth_for_image(&args.image.name).await?;
-    let manifests = client.get_manifests_for_image(&auth.token, &args.image.name, &args.image.tag).await?;
-    let manifest = get_manifest_for_platform(
-        &manifests,
-        &platform
-    ).context("Manifest not found for platform")?;
-    let oci_manifest = client.get_oci_manifest(&auth.token, &args.image.name, &manifest.digest.as_str()).await?;
-    
+    let client = DockerClient::new_with_auth(&args.image.name).await?;
+    let manifests = client.get_manifests().await?;
+    let manifest = manifests.get_manifest_for_platform(&platform).context("Manifest not found for platform")?;
+    let oci_manifest = client.get_oci_manifest( &manifest.digest.as_str()).await?;
     let stored_digest = state.get_stored_image_digest(&args.image.name, &args.image.tag, &platform);
     let downloaded = stored_digest.is_some();
     let is_latest = matches!(stored_digest, Some(v) if v == oci_manifest.config.digest);
@@ -46,22 +41,19 @@ pub async fn build_image(args: BuildImageArgs) -> Result<String> {
 }
 
 async fn build_image_remote(args: BuildImageArgs, state: &mut ApplicationState) -> Result<MakeImageResult> {    
-    let layers_folder = get_layers_path()?;
+    let layers_folder = get_layers_compressed_path()?;
     let images_folder = get_images_path()?;
-    println!("{}   {}", args.image.name, args.image.tag);
     let platform = Platform {
         architecture: args.architecture,
         os: args.os
     };
 
-    let client = DockerClient::new();
-    let auth = client.get_auth_for_image(&args.image.name).await?;
-    let manifests = client.get_manifests_for_image(&auth.token, &args.image.name, &args.image.tag).await?;
-    let manifest = get_manifest_for_platform(
-        &manifests,
-        &platform
-    ).context("Manifest not found for platform")?;
-    let oci_manifest = client.get_oci_manifest(&auth.token, &args.image.name, &manifest.digest.as_str()).await?;
+    println!("building remote image for {}:{}", args.image.name, args.image.tag);
+
+    let client = DockerClient::new_with_auth(&args.image.name).await?;
+    let manifests = client.get_manifests().await?;
+    let manifest = manifests.get_manifest_for_platform(&platform).context("Manifest not found for platform")?;
+    let oci_manifest = client.get_oci_manifest(&manifest.digest.as_str()).await?;
     let stored_digest = state.get_stored_image_digest(&args.image.name, &args.image.tag, &platform);
     let downloaded = stored_digest.is_some();
     let is_latest = matches!(&stored_digest, Some(v) if v == &oci_manifest.config.digest);
@@ -73,11 +65,14 @@ async fn build_image_remote(args: BuildImageArgs, state: &mut ApplicationState) 
             .map(|l|{l.digest.clone()})
             .collect::<Vec<String>>();
         // Download each layer
-        download_layers(&client, &auth.token, &args.image.name, &layers).await?;
+        client.download_layers_compressed(&layers).await?;
+        let image_config = client.get_image_config(&oci_manifest.config.digest.as_str()).await?;
+        let bootloader_path = image_config.config.labels.get("whaledrive.bootloader.path").context("Bootloader not found in image config")?;
         create_drive_image(
             oci_manifest.config.digest.as_str(),
             &layers,
-            layers_folder.as_std_path()
+            layers_folder.as_std_path(),
+            &bootloader_path
         )?
     } else {
         let digest = stored_digest.context("Expected digest to exist")?;

@@ -3,10 +3,7 @@ use std::{collections::HashMap, fs};
 use serde::{Deserialize, Serialize};
 use anyhow::Result;
 
-use crate::{models::registry_models::Platform, utils::{get_app_state_path, UnwrapOrPanicJson}};
-
-
-
+use crate::{models::registry_models::Platform, paths::get_app_state_path, utils::UnwrapOrPanicJson};
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Layer {
@@ -73,10 +70,15 @@ pub struct StateHandle {
 /// We use a state handle to automatically read and write the state file
 impl StateHandle {
     pub fn new() -> Result<StateHandle> {
-        let state = serde_json::from_str(
-            &std::fs::read_to_string(&get_app_state_path()?)?
-        )?;
-        Ok(StateHandle {state})
+        let state_path = get_app_state_path()?;
+        if state_path.exists() {
+            let state = serde_json::from_str(
+                &std::fs::read_to_string(&state_path)?
+            )?;
+            Ok(StateHandle {state})
+        } else {
+            Ok(StateHandle { state: ApplicationState::new() })
+        }
     }
 }
 
