@@ -1,5 +1,6 @@
 use std::fs;
 use anyhow::{Context, Result};
+use camino::Utf8PathBuf;
 
 use crate::{
     application_state::{ApplicationState, Image, StateHandle}, docker_client::DockerClient, models::{
@@ -55,8 +56,9 @@ async fn build_image_remote(args: BuildImageArgs, state: &mut ApplicationState) 
     let manifest = manifests.get_manifest_for_platform(&platform).context("Manifest not found for platform")?;
     let oci_manifest = client.get_oci_manifest(&manifest.digest.as_str()).await?;
     let stored_digest = state.get_stored_image_digest(&args.image.name, &args.image.tag, &platform);
+    let mut file_path = images_folder.join(format!("{}.img", oci_manifest.config.digest)).to_string();
     let downloaded = stored_digest.is_some();
-    let is_latest = matches!(&stored_digest, Some(v) if v == &oci_manifest.config.digest);
+    let is_latest = !args.outfile.is_some() && matches!(&stored_digest, Some(v) if v == &oci_manifest.config.digest);
     // If the digest doesn't match, it means that we have to download new layers
     let size = if !is_latest {
         // Get layer digests
@@ -68,11 +70,18 @@ async fn build_image_remote(args: BuildImageArgs, state: &mut ApplicationState) 
         client.download_layers_compressed(&layers).await?;
         let image_config = client.get_image_config(&oci_manifest.config.digest.as_str()).await?;
         let bootloader_path = image_config.config.labels.get("whaledrive.bootloader.path").context("Bootloader not found in image config")?;
+        
+        let image_directory = get_images_path()?;
+        if let Some(outfile) = &args.outfile {
+            file_path = outfile.to_string();
+        }
+        fs::create_dir_all(&image_directory)?;
+        
         create_drive_image(
-            oci_manifest.config.digest.as_str(),
             &layers,
             layers_folder.as_std_path(),
-            &bootloader_path
+            &bootloader_path,
+            &Utf8PathBuf::from(&file_path)
         )?
     } else {
         let digest = stored_digest.context("Expected digest to exist")?;
@@ -89,7 +98,6 @@ async fn build_image_remote(args: BuildImageArgs, state: &mut ApplicationState) 
         });
     }
     state.set_stored_image_digest(&args.image.name, &args.image.tag, &platform, oci_manifest.config.digest.clone());
-    let file_path = images_folder.join(format!("{}.img", oci_manifest.config.digest)).to_string();
     Ok(MakeImageResult {
         digest: oci_manifest.config.digest,
         size,

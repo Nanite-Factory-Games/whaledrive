@@ -1,9 +1,9 @@
-use std::{fs, result};
+use std::fs;
 
 use camino::Utf8PathBuf;
 
 use serde_json::json;
-use whaledrive::{models::input_models::{BuildImageArgs, ImageInfoArgs, RemoveImageArgs}, paths::BASE_PATH, utils::UnwrapOrPanicJson};
+use whaledrive::{cli_commands::check_required_commands_exist, models::input_models::{BuildImageArgs, ImageInfoArgs, RemoveImageArgs}, paths::BASE_PATH, utils::UnwrapOrPanicJson};
 use anyhow::Result;
 use tokio;
 use clap::{Args, Parser, Subcommand};
@@ -41,31 +41,38 @@ pub struct GlobalOpts {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut base_path_lock = BASE_PATH.write().map_err(|_|{anyhow::anyhow!("Failed to get state path lock")})?;
-
-    // Parse the command line arguments
-    let command = App::parse();
-    // Update the globally used state path to the one provided via CLI
-    *base_path_lock = command.global_opts.base_path.clone();
-
-    fs::create_dir_all(command.global_opts.base_path.as_path())?;
-
-    // Needs to be dropped early so we don't get deadlocked
-    drop(base_path_lock);
-
-    let result = match command.command {
-        Command::Info(args) => whaledrive::commands::image_info(args).await,
-        Command::Build(args) => whaledrive::commands::build_image(args).await,
-        Command::Prune => whaledrive::commands::prune(),
-        Command::Images => whaledrive::commands::list_images(),
-        Command::Rm(args) => whaledrive::commands::remove_image(args),
-    };
-
-    match result {
+    // We wrap most of the main logic in a function so we can
+    // catch any errors and print them nicely
+    match wrapped_main().await {
         Ok(result) => println!("{result}"),
         Err(e) => eprintln!("{}", json!({
             "error": e.to_string()
         }).to_string())
     }
     Ok(())
+}
+
+
+async fn wrapped_main() -> Result<String> {
+    // Check if all required commands exist
+    check_required_commands_exist()?;
+
+    let command = App::parse();
+
+    // Update global base path based on CLI arguments
+    let mut base_path_lock = BASE_PATH.write().map_err(|_|{anyhow::anyhow!("Failed to get state path lock")})?;
+    *base_path_lock = command.global_opts.base_path.clone();
+    // Create the base path if it doesn't exist
+    fs::create_dir_all(command.global_opts.base_path.as_path())?;
+
+    // Needs to be dropped early so we don't get deadlocked
+    drop(base_path_lock);
+
+    match command.command {
+        Command::Info(args) => whaledrive::commands::image_info(args).await,
+        Command::Build(args) => whaledrive::commands::build_image(args).await,
+        Command::Prune => whaledrive::commands::prune(),
+        Command::Images => whaledrive::commands::list_images(),
+        Command::Rm(args) => whaledrive::commands::remove_image(args),
+    }
 }

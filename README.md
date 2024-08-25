@@ -1,5 +1,7 @@
 # WhaleDrive
 
+CAUTION: this is incomplete and not ready for use yet.
+
 This crate is a work in progress. Currently it downloads the compressed layers and
 unpacks them for every image. Ideally it would decompress once and then reuse the decompressed
 folders, but in practice this is very difficult to do and decompressing into the output folder
@@ -12,6 +14,11 @@ files from them.
 
 This utility outputs human readable JSON to stdout. This allows the
 user to easily pipe the output to other tools like jq.
+
+## TODO
+ - Embed bootloaders into the utility rather than relyting on the image to have them
+ - Add support for entrypoint and cmd via custom init system
+ - Possibly add support for doing this as non root user
 
 ## Installation
 You can install the utility with cargo:

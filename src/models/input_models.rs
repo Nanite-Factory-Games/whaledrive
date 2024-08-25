@@ -1,3 +1,4 @@
+use camino::{Utf8Path, Utf8PathBuf};
 use clap::Args;
 
 #[derive(Debug, Clone)]
@@ -49,6 +50,9 @@ pub struct ImageInfoArgs {
 pub struct BuildImageArgs {
     /// The image to pull
     pub image: ImageArg,
+    /// The output path of the image
+    #[clap(long)]
+    pub outfile: Option<Utf8PathBuf>,
     /// The operating system the image is for
     #[clap(long, default_value_t = String::from("linux"))]
     pub os: String,
